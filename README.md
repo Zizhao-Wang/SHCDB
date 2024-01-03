@@ -39,7 +39,7 @@ cd workload_data_generation
 ```
 Run the etc_data_generation.py script to generate the dataset:
 ```bash
-python etc_data_generation.py
+your_python_package etc_data_generation.py
 ```  
 After executing the above script, you will find a file named etc_data.csv in the workloads directory, which contains the generated simulated key-value pair operation data  
 
