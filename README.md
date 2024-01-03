@@ -14,8 +14,8 @@ SHCDB/
 │ └── zipf_data_display.py # Zipf数据展示脚本
 │
 ├── workloads/ # 存放生成的工作负载数据
-│
-├── dataset_description.md # 数据集描述文件
+| |
+| └── dataset_description.md # 数据集描述文件 
 ├── README.md # 项目说明文件
 └── requirements.txt # Python依赖列表
 ```
