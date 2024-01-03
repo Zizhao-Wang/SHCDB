@@ -43,6 +43,7 @@ data = pd.DataFrame({
 })
 
 # 保存到CSV文件，如果您需要不同的格式或者直接输出到屏幕，请调整这部分代码
+tqdm.pandas(desc='Saving to CSV')
 data.to_csv("../workloads/etc_data.csv", index=False)
 
 # 打印前5条数据以检查
