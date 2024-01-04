@@ -41,6 +41,12 @@ Run the etc_data_generation.py script to generate the dataset:
 ```bash
 your_python_package etc_data_generation.py
 ```  
+
+Run the data_labeled.py script to add labels:
+```bash
+your_python_package data_labeled.py
+``` 
+
 After executing the above script, you will find a file named etc_data.csv in the workloads directory, which contains the generated simulated key-value pair operation data  
 
 ## Dataset Description
