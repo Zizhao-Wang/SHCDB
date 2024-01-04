@@ -15,11 +15,11 @@ x_max = data['Key'].max()
 key_counts = data['Key'].value_counts().sort_index()
 
 plt.figure(figsize=(14, 7))
-plt.scatter(key_counts.index, key_counts.values)
 plt.title('Key Density Trend')
 plt.xlabel('Key')
 plt.ylabel('Density')
 plt.xlim(-10, x_max)  # 设置x轴范围
+plt.plot(key_counts.index, key_counts.values)
 plt.grid(True)
 
 # 保存为PNG文件
