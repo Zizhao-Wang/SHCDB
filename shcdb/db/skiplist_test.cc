@@ -7,13 +7,14 @@
 #include <atomic>
 #include <set>
 
+#include "gtest/gtest.h"
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/arena.h"
 #include "util/hash.h"
 #include "util/random.h"
-#include "util/testharness.h"
+#include "util/testutil.h"
 
 namespace leveldb {
 
@@ -30,8 +31,6 @@ struct Comparator {
     }
   }
 };
-
-class SkipTest { };
 
 TEST(SkipTest, Empty) {
   Arena arena;
@@ -117,8 +116,7 @@ TEST(SkipTest, InsertAndLookup) {
 
     // Compare against model iterator
     for (std::set<Key>::reverse_iterator model_iter = keys.rbegin();
-         model_iter != keys.rend();
-         ++model_iter) {
+         model_iter != keys.rend(); ++model_iter) {
       ASSERT_TRUE(iter.Valid());
       ASSERT_EQ(*model_iter, iter.key());
       iter.Prev();
@@ -153,19 +151,19 @@ TEST(SkipTest, InsertAndLookup) {
 // been concurrently added since the iterator started.
 class ConcurrentTest {
  private:
-  static const uint32_t K = 4;
+  static constexpr uint32_t K = 4;
 
   static uint64_t key(Key key) { return (key >> 40); }
   static uint64_t gen(Key key) { return (key >> 8) & 0xffffffffu; }
   static uint64_t hash(Key key) { return key & 0xff; }
 
   static uint64_t HashNumbers(uint64_t k, uint64_t g) {
-    uint64_t data[2] = { k, g };
+    uint64_t data[2] = {k, g};
     return Hash(reinterpret_cast<char*>(data), sizeof(data), 0);
   }
 
   static Key MakeKey(uint64_t k, uint64_t g) {
-    assert(sizeof(Key) == sizeof(uint64_t));
+    static_assert(sizeof(Key) == sizeof(uint64_t), "");
     assert(k <= K);  // We sometimes pass K to seek to the end of the skiplist
     assert(g <= 0xffffffffu);
     return ((k << 40) | (g << 8) | (HashNumbers(k, g) & 0xff));
@@ -195,9 +193,7 @@ class ConcurrentTest {
     void Set(int k, int v) {
       generation[k].store(v, std::memory_order_release);
     }
-    int Get(int k) {
-      return generation[k].load(std::memory_order_acquire);
-    }
+    int Get(int k) { return generation[k].load(std::memory_order_acquire); }
 
     State() {
       for (int k = 0; k < K; k++) {
@@ -216,7 +212,7 @@ class ConcurrentTest {
   SkipList<Key, Comparator> list_;
 
  public:
-  ConcurrentTest() : list_(Comparator(), &arena_) { }
+  ConcurrentTest() : list_(Comparator(), &arena_) {}
 
   // REQUIRES: External synchronization
   void WriteStep(Random* rnd) {
@@ -255,11 +251,9 @@ class ConcurrentTest {
         // Note that generation 0 is never inserted, so it is ok if
         // <*,0,*> is missing.
         ASSERT_TRUE((gen(pos) == 0) ||
-                    (gen(pos) > static_cast<Key>(initial_state.Get(key(pos))))
-                    ) << "key: " << key(pos)
-                      << "; gen: " << gen(pos)
-                      << "; initgen: "
-                      << initial_state.Get(key(pos));
+                    (gen(pos) > static_cast<Key>(initial_state.Get(key(pos)))))
+            << "key: " << key(pos) << "; gen: " << gen(pos)
+            << "; initgen: " << initial_state.Get(key(pos));
 
         // Advance to next key in the valid key space
         if (key(pos) < key(current)) {
@@ -286,7 +280,9 @@ class ConcurrentTest {
     }
   }
 };
-const uint32_t ConcurrentTest::K;
+
+// Needed when building in C++11 mode.
+constexpr uint32_t ConcurrentTest::K;
 
 // Simple test that does single-threaded testing of the ConcurrentTest
 // scaffolding.
@@ -305,17 +301,10 @@ class TestState {
   int seed_;
   std::atomic<bool> quit_flag_;
 
-  enum ReaderState {
-    STARTING,
-    RUNNING,
-    DONE
-  };
+  enum ReaderState { STARTING, RUNNING, DONE };
 
   explicit TestState(int s)
-      : seed_(s),
-        quit_flag_(false),
-        state_(STARTING),
-        state_cv_(&mu_) {}
+      : seed_(s), quit_flag_(false), state_(STARTING), state_cv_(&mu_) {}
 
   void Wait(ReaderState s) LOCKS_EXCLUDED(mu_) {
     mu_.Lock();
@@ -357,7 +346,7 @@ static void RunConcurrent(int run) {
   const int kSize = 1000;
   for (int i = 0; i < N; i++) {
     if ((i % 100) == 0) {
-      fprintf(stderr, "Run %d of %d\n", i, N);
+      std::fprintf(stderr, "Run %d of %d\n", i, N);
     }
     TestState state(seed + 1);
     Env::Default()->Schedule(ConcurrentReader, &state);
@@ -377,7 +366,3 @@ TEST(SkipTest, Concurrent4) { RunConcurrent(4); }
 TEST(SkipTest, Concurrent5) { RunConcurrent(5); }
 
 }  // namespace leveldb
-
-int main(int argc, char** argv) {
-  return leveldb::test::RunAllTests();
-}

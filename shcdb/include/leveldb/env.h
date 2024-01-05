@@ -13,28 +13,26 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
 #define STORAGE_LEVELDB_INCLUDE_ENV_H_
 
-#include <stdarg.h>
-#include <stdint.h>
+#include <cstdarg>
+#include <cstdint>
 #include <string>
 #include <vector>
+
 #include "leveldb/export.h"
 #include "leveldb/status.h"
 
+// This workaround can be removed when leveldb::Env::DeleteFile is removed.
 #if defined(_WIN32)
-// The leveldb::Env class below contains a DeleteFile method.
-// At the same time, <windows.h>, a fairly popular header
-// file for Windows applications, defines a DeleteFile macro.
+// On Windows, the method name DeleteFile (below) introduces the risk of
+// triggering undefined behavior by exposing the compiler to different
+// declarations of the Env class in different translation units.
 //
-// Without any intervention on our part, the result of this
-// unfortunate coincidence is that the name of the
-// leveldb::Env::DeleteFile method seen by the compiler depends on
-// whether <windows.h> was included before or after the LevelDB
-// headers.
+// This is because <windows.h>, a fairly popular header file for Windows
+// applications, defines a DeleteFile macro. So, files that include the Windows
+// header before this header will contain an altered Env declaration.
 //
-// To avoid headaches, we undefined DeleteFile (if defined) and
-// redefine it at the bottom of this file. This way <windows.h>
-// can be included before this file (or not at all) and the
-// exported method will always be leveldb::Env::DeleteFile.
+// This workaround ensures that the compiler sees the same Env declaration,
+// independently of whether <windows.h> was included.
 #if defined(DeleteFile)
 #undef DeleteFile
 #define LEVELDB_DELETEFILE_UNDEFINED
@@ -52,7 +50,7 @@ class WritableFile;
 
 class LEVELDB_EXPORT Env {
  public:
-  Env() = default;
+  Env();
 
   Env(const Env&) = delete;
   Env& operator=(const Env&) = delete;
@@ -120,15 +118,48 @@ class LEVELDB_EXPORT Env {
   // Original contents of *results are dropped.
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) = 0;
-
   // Delete the named file.
-  virtual Status DeleteFile(const std::string& fname) = 0;
+  //
+  // The default implementation calls DeleteFile, to support legacy Env
+  // implementations. Updated Env implementations must override RemoveFile and
+  // ignore the existence of DeleteFile. Updated code calling into the Env API
+  // must call RemoveFile instead of DeleteFile.
+  //
+  // A future release will remove DeleteDir and the default implementation of
+  // RemoveDir.
+  virtual Status RemoveFile(const std::string& fname);
+
+  // DEPRECATED: Modern Env implementations should override RemoveFile instead.
+  //
+  // The default implementation calls RemoveFile, to support legacy Env user
+  // code that calls this method on modern Env implementations. Modern Env user
+  // code should call RemoveFile.
+  //
+  // A future release will remove this method.
+  virtual Status DeleteFile(const std::string& fname);
 
   // Create the specified directory.
   virtual Status CreateDir(const std::string& dirname) = 0;
 
   // Delete the specified directory.
-  virtual Status DeleteDir(const std::string& dirname) = 0;
+  //
+  // The default implementation calls DeleteDir, to support legacy Env
+  // implementations. Updated Env implementations must override RemoveDir and
+  // ignore the existence of DeleteDir. Modern code calling into the Env API
+  // must call RemoveDir instead of DeleteDir.
+  //
+  // A future release will remove DeleteDir and the default implementation of
+  // RemoveDir.
+  virtual Status RemoveDir(const std::string& dirname);
+
+  // DEPRECATED: Modern Env implementations should override RemoveDir instead.
+  //
+  // The default implementation calls RemoveDir, to support legacy Env user
+  // code that calls this method on modern Env implementations. Modern Env user
+  // code should call RemoveDir.
+  //
+  // A future release will remove this method.
+  virtual Status DeleteDir(const std::string& dirname);
 
   // Store the size of fname in *file_size.
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;
@@ -164,16 +195,14 @@ class LEVELDB_EXPORT Env {
   // added to the same Env may run concurrently in different threads.
   // I.e., the caller may not assume that background work items are
   // serialized.
-  virtual void Schedule(
-      void (*function)(void* arg),
-      void* arg) = 0;
+  virtual void Schedule(void (*function)(void* arg), void* arg) = 0;
 
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
   virtual void StartThread(void (*function)(void* arg), void* arg) = 0;
 
   // *path is set to a temporary directory that can be used for testing. It may
-  // or many not have just been created. The directory may or may not differ
+  // or may not have just been created. The directory may or may not differ
   // between runs of the same process, but subsequent calls will return the
   // same directory.
   virtual Status GetTestDirectory(std::string* path) = 0;
@@ -271,7 +300,7 @@ class LEVELDB_EXPORT Logger {
   virtual ~Logger();
 
   // Write an entry to the log file with the specified format.
-  virtual void Logv(const char* format, va_list ap) = 0;
+  virtual void Logv(const char* format, std::va_list ap) = 0;
 };
 
 // Identifies a locked file.
@@ -287,9 +316,9 @@ class LEVELDB_EXPORT FileLock {
 
 // Log the specified data to *info_log if info_log is non-null.
 void Log(Logger* info_log, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#   endif
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((__format__(__printf__, 2, 3)))
+#endif
     ;
 
 // A utility routine: write "data" to the named file.
@@ -306,7 +335,7 @@ LEVELDB_EXPORT Status ReadFileToString(Env* env, const std::string& fname,
 class LEVELDB_EXPORT EnvWrapper : public Env {
  public:
   // Initialize an EnvWrapper that delegates all calls to *t.
-  explicit EnvWrapper(Env* t) : target_(t) { }
+  explicit EnvWrapper(Env* t) : target_(t) {}
   virtual ~EnvWrapper();
 
   // Return the target to which this Env forwards all calls.
@@ -333,14 +362,14 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
                      std::vector<std::string>* r) override {
     return target_->GetChildren(dir, r);
   }
-  Status DeleteFile(const std::string& f) override {
-    return target_->DeleteFile(f);
+  Status RemoveFile(const std::string& f) override {
+    return target_->RemoveFile(f);
   }
   Status CreateDir(const std::string& d) override {
     return target_->CreateDir(d);
   }
-  Status DeleteDir(const std::string& d) override {
-    return target_->DeleteDir(d);
+  Status RemoveDir(const std::string& d) override {
+    return target_->RemoveDir(d);
   }
   Status GetFileSize(const std::string& f, uint64_t* s) override {
     return target_->GetFileSize(f, s);
@@ -364,9 +393,7 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
   Status NewLogger(const std::string& fname, Logger** result) override {
     return target_->NewLogger(fname, result);
   }
-  uint64_t NowMicros() override {
-    return target_->NowMicros();
-  }
+  uint64_t NowMicros() override { return target_->NowMicros(); }
   void SleepForMicroseconds(int micros) override {
     target_->SleepForMicroseconds(micros);
   }
@@ -377,7 +404,8 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
 
 }  // namespace leveldb
 
-// Redefine DeleteFile if necessary.
+// This workaround can be removed when leveldb::Env::DeleteFile is removed.
+// Redefine DeleteFile if it was undefined earlier.
 #if defined(_WIN32) && defined(LEVELDB_DELETEFILE_UNDEFINED)
 #if defined(UNICODE)
 #define DeleteFile DeleteFileW

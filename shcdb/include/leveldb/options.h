@@ -5,7 +5,8 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
-#include <stddef.h>
+#include <cstddef>
+
 #include "leveldb/export.h"
 
 namespace leveldb {
@@ -24,12 +25,16 @@ class Snapshot;
 enum CompressionType {
   // NOTE: do not change the values of existing entries, as these are
   // part of the persistent format on disk.
-  kNoCompression     = 0x0,
-  kSnappyCompression = 0x1
+  kNoCompression = 0x0,
+  kSnappyCompression = 0x1,
+  kZstdCompression = 0x2,
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
 struct LEVELDB_EXPORT Options {
+  // Create an Options object with default values for all fields.
+  Options();
+
   // -------------------
   // Parameters that affect behavior
 
@@ -126,6 +131,10 @@ struct LEVELDB_EXPORT Options {
   // efficiently detect that and will switch to uncompressed mode.
   CompressionType compression = kSnappyCompression;
 
+  // Compression level for zstd.
+  // Currently only the range [-5,22] is supported. Default is 1.
+  int zstd_compression_level = 1;
+
   // EXPERIMENTAL: If true, append to existing MANIFEST and log files
   // when a database is opened.  This can significantly speed up open.
   //
@@ -136,9 +145,6 @@ struct LEVELDB_EXPORT Options {
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
-
-  // Create an Options object with default values for all fields.
-  Options();
 };
 
 // Options that control read operations
@@ -156,12 +162,12 @@ struct LEVELDB_EXPORT ReadOptions {
   // not have been released).  If "snapshot" is null, use an implicit
   // snapshot of the state at the beginning of this read operation.
   const Snapshot* snapshot = nullptr;
-
-  ReadOptions() = default;
 };
 
 // Options that control write operations
 struct LEVELDB_EXPORT WriteOptions {
+  WriteOptions() = default;
+
   // If true, the write will be flushed from the operating system
   // buffer cache (by calling WritableFile::Sync()) before the write
   // is considered complete.  If this flag is true, writes will be
@@ -177,8 +183,6 @@ struct LEVELDB_EXPORT WriteOptions {
   // with sync==true has similar crash semantics to a "write()"
   // system call followed by "fsync()".
   bool sync = false;
-
-  WriteOptions() = default;
 };
 
 }  // namespace leveldb

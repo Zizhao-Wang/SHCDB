@@ -5,6 +5,8 @@
 #ifndef STORAGE_LEVELDB_UTIL_TESTUTIL_H_
 #define STORAGE_LEVELDB_UTIL_TESTUTIL_H_
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "helpers/memenv/memenv.h"
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
@@ -12,6 +14,20 @@
 
 namespace leveldb {
 namespace test {
+
+MATCHER(IsOK, "") { return arg.ok(); }
+
+// Macros for testing the results of functions that return leveldb::Status or
+// absl::StatusOr<T> (for any type T).
+#define EXPECT_LEVELDB_OK(expression) \
+  EXPECT_THAT(expression, leveldb::test::IsOK())
+#define ASSERT_LEVELDB_OK(expression) \
+  ASSERT_THAT(expression, leveldb::test::IsOK())
+
+// Returns the random seed used at the start of the current test run.
+inline int RandomSeed() {
+  return testing::UnitTest::GetInstance()->random_seed();
+}
 
 // Store in *dst a random string of length "len" and return a Slice that
 // references the generated data.
@@ -24,8 +40,8 @@ std::string RandomKey(Random* rnd, int len);
 // Store in *dst a string of length "len" that will compress to
 // "N*compressed_fraction" bytes and return a Slice that references
 // the generated data.
-Slice CompressibleString(Random* rnd, double compressed_fraction,
-                         size_t len, std::string* dst);
+Slice CompressibleString(Random* rnd, double compressed_fraction, size_t len,
+                         std::string* dst);
 
 // A wrapper that allows injection of errors.
 class ErrorEnv : public EnvWrapper {
@@ -33,12 +49,11 @@ class ErrorEnv : public EnvWrapper {
   bool writable_file_error_;
   int num_writable_file_errors_;
 
-  ErrorEnv() : EnvWrapper(NewMemEnv(Env::Default())),
-               writable_file_error_(false),
-               num_writable_file_errors_(0) { }
-  ~ErrorEnv() override {
-    delete target();
-  }
+  ErrorEnv()
+      : EnvWrapper(NewMemEnv(Env::Default())),
+        writable_file_error_(false),
+        num_writable_file_errors_(0) {}
+  ~ErrorEnv() override { delete target(); }
 
   Status NewWritableFile(const std::string& fname,
                          WritableFile** result) override {
