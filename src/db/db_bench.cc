@@ -3,8 +3,14 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include <sys/types.h>
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include "leveldb/cache.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -111,6 +117,10 @@ static bool FLAGS_reuse_logs = false;
 // Use the db with the following name.
 static const char* FLAGS_db = nullptr;
 
+// Common key prefix length.
+static int FLAGS_key_prefix = 0;
+
+
 namespace leveldb {
 
 namespace {
@@ -146,6 +156,33 @@ class RandomGenerator {
     pos_ += len;
     return Slice(data_.data() + pos_ - len, len);
   }
+};
+
+class variable_Buffer{
+ public:
+  variable_Buffer() {
+    assert(FLAGS_key_prefix < sizeof(buffer_));
+    memset(buffer_, 'a', FLAGS_key_prefix);
+    this->key_sizes = 16;
+  }
+  variable_Buffer& operator=(variable_Buffer& other) = delete;
+  variable_Buffer(variable_Buffer& other) = delete;
+
+  void Set(int k,int key_size) {
+    // std::snprintf(buffer_ + FLAGS_key_prefix, sizeof(buffer_) - FLAGS_key_prefix, "%016d", k);
+    assert(key_size <= sizeof(buffer_) - FLAGS_key_prefix);
+    char format[20];
+    std::snprintf(format, sizeof(format), "%%0%dd", key_size);
+    std::snprintf(buffer_ + FLAGS_key_prefix, sizeof(buffer_) - FLAGS_key_prefix, format, k);
+    this->key_sizes = key_size;
+    
+  }
+
+  Slice slice() const { return Slice(buffer_, FLAGS_key_prefix + this->key_sizes); }
+
+ private:
+  char buffer_[1024];
+  int key_sizes;
 };
 
 #if defined(__linux)
@@ -714,7 +751,7 @@ class Benchmark {
   }
 
   void WriteRandom(ThreadState* thread) {
-    DoWrite(thread, false);
+    DoWrite2(thread, false);
   }
 
   void DoWrite(ThreadState* thread, bool seq) {
@@ -746,6 +783,69 @@ class Benchmark {
     }
     thread->stats.AddBytes(bytes);
   }
+
+void DoWrite2(ThreadState* thread, bool seq) {
+    if (num_ != FLAGS_num) {
+      char msg[100];
+      std::snprintf(msg, sizeof(msg), "(%d ops)", num_);
+      thread->stats.AddMessage(msg);
+    }
+
+
+    RandomGenerator gen;
+    WriteBatch batch;
+    Status s;
+    int64_t bytes = 0;
+    variable_Buffer key_buffer;
+    variable_Buffer value_buffer;
+
+    std::ifstream csv_file("../../workloads/etc_data1.csv");
+    std::string line;
+    if (!csv_file.is_open()) {
+        fprintf(stderr,"Unable to open CSV file\n");
+        return;
+    }
+    std::getline(csv_file, line);
+    
+    for (int i = 0; i < num_; i += entries_per_batch_) {
+      batch.Clear();
+      for (int j = 0; j < entries_per_batch_; j++) {
+        // const int k = seq ? i + j : thread->rand.Uniform(FLAGS_num);
+        if (!std::getline(csv_file, line)) { // 从文件中读取一行
+                fprintf(stderr, "Error reading key from file\n");
+                return;
+        }
+        std::stringstream line_stream(line);
+        std::string cell;
+        std::vector<std::string> row_data;
+        while (getline(line_stream, cell, ',')) {
+            row_data.push_back(cell);
+        }
+        if (row_data.size() < 5) {
+            fprintf(stderr, "Invalid CSV row format\n");
+            continue;
+        }
+        const int k = std::stoi(row_data[0]); 
+        int key_size = std::stoi(row_data[1]);
+        const int v = std::stoi(row_data[3]); 
+        int val_size = std::stoi(row_data[4]);
+        key_buffer.Set(v,val_size);
+        key_buffer.Set(k,key_size);
+        batch.Put(key_buffer.slice(), value_buffer.slice());
+        bytes += value_buffer.slice().size() + key_buffer.slice().size();
+        thread->stats.FinishedSingleOp();
+      }
+      s = db_->Write(write_options_, &batch);
+      if (!s.ok()) {
+        std::fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+        std::exit(1);
+      }
+  }
+    thread->stats.AddBytes(bytes);
+  }
+
+
+
 
   void ReadSequential(ThreadState* thread) {
     Iterator* iter = db_->NewIterator(ReadOptions());
