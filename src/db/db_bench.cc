@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -175,7 +176,11 @@ class variable_Buffer{
     std::snprintf(format, sizeof(format), "%%0%dd", key_size);
     std::snprintf(buffer_ + FLAGS_key_prefix, sizeof(buffer_) - FLAGS_key_prefix, format, k);
     this->key_sizes = key_size;
-    
+  }
+
+  void PrintBuffer() const {
+    std::cout.write(buffer_, FLAGS_key_prefix + key_sizes);
+    std::cout << std::endl;
   }
 
   Slice slice() const { return Slice(buffer_, FLAGS_key_prefix + this->key_sizes); }
@@ -791,7 +796,6 @@ void DoWrite2(ThreadState* thread, bool seq) {
       thread->stats.AddMessage(msg);
     }
 
-
     RandomGenerator gen;
     WriteBatch batch;
     Status s;
@@ -812,8 +816,8 @@ void DoWrite2(ThreadState* thread, bool seq) {
       for (int j = 0; j < entries_per_batch_; j++) {
         // const int k = seq ? i + j : thread->rand.Uniform(FLAGS_num);
         if (!std::getline(csv_file, line)) { // 从文件中读取一行
-                fprintf(stderr, "Error reading key from file\n");
-                return;
+            fprintf(stderr, "Error reading key from file\n");
+            return;
         }
         std::stringstream line_stream(line);
         std::string cell;
@@ -829,18 +833,24 @@ void DoWrite2(ThreadState* thread, bool seq) {
         int key_size = std::stoi(row_data[1]);
         const int v = std::stoi(row_data[3]); 
         int val_size = std::stoi(row_data[4]);
+        std::cout << "k: " << k << ", key_size: " << key_size << ", v: " << v << ", val_size: " << val_size << std::endl;
+
         key_buffer.Set(v,val_size);
-        key_buffer.Set(k,key_size);
-        batch.Put(key_buffer.slice(), value_buffer.slice());
+        value_buffer.Set(k,key_size);
+
+        key_buffer.PrintBuffer();
+        value_buffer.PrintBuffer();
+
+        // batch.Put(key_buffer.slice(), value_buffer.slice());
         bytes += value_buffer.slice().size() + key_buffer.slice().size();
         thread->stats.FinishedSingleOp();
       }
-      s = db_->Write(write_options_, &batch);
+    //   s = db_->Write(write_options_, &batch);
       if (!s.ok()) {
         std::fprintf(stderr, "put error: %s\n", s.ToString().c_str());
         std::exit(1);
       }
-  }
+    }
     thread->stats.AddBytes(bytes);
   }
 
